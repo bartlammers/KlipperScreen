@@ -1,6 +1,7 @@
 import gi
 import logging
 import time
+import re
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
@@ -24,22 +25,37 @@ class ConsolePanel(ScreenPanel):
     def initialize(self, panel_name):
         _ = self.lang.gettext
         self.autoscroll = True
+        self.hidetemps = True
 
         gcodes = self._screen._ws.send_method("server.gcode_store", {"count": 100}, self.gcode_response)
 
         o1_lbl = Gtk.Label(_("Auto-scroll"))
         o1_lbl.set_halign(Gtk.Align.END)
         o1_switch = Gtk.Switch()
-        o1_switch.set_property("width-request", round(self._gtk.get_font_size()*6))
-        o1_switch.set_property("height-request", round(self._gtk.get_font_size()*3))
+        o1_switch.set_property("width-request", round(self._gtk.get_font_size()*5))
+        o1_switch.set_property("height-request", round(self._gtk.get_font_size()*2.5))
         o1_switch.set_active(self.autoscroll)
         o1_switch.connect("notify::active", self.set_autoscroll)
+
+        o2_lbl = Gtk.Label(_("Hide temp."))
+        o2_lbl.set_halign(Gtk.Align.END)
+        o2_switch = Gtk.Switch()
+        o2_switch.set_property("width-request", round(self._gtk.get_font_size()*5))
+        o2_switch.set_property("height-request", round(self._gtk.get_font_size()*2.5))
+        o2_switch.set_active(self.hidetemps)
+        o2_switch.connect("notify::active", self.hide_temps)
+
+        o3_button = self._gtk.ButtonImage("refresh", _('Clear') + " ", None, .66, Gtk.PositionType.RIGHT, False)
+        o3_button.connect("clicked", self.clear)
 
         options = Gtk.HBox()
         options.set_hexpand(True)
         options.set_vexpand(False)
         options.add(o1_lbl)
         options.pack_start(o1_switch, False, 0, 5)
+        options.add(o2_lbl)
+        options.pack_start(o2_switch, False, 0, 5)
+        options.add(o3_button)
 
         sw = Gtk.ScrolledWindow()
         sw.set_hexpand(True)
@@ -65,7 +81,7 @@ class ConsolePanel(ScreenPanel):
         entry.connect("focus-out-event", self._remove_keyboard)
         entry.connect("activate", self._send_command)
 
-        enter = self._gtk.Button(_("Send"))
+        enter = self._gtk.ButtonImage("resume", " " + _('Send') + " ", None, .66, Gtk.PositionType.RIGHT, False)
         enter.set_hexpand(False)
         enter.connect("clicked", self._send_command)
 
@@ -81,10 +97,13 @@ class ConsolePanel(ScreenPanel):
         })
 
         content_box = Gtk.VBox()
-        content_box.pack_start(options, False, 0, 0)
+        content_box.pack_start(options, False, 0, 5)
         content_box.add(sw)
         content_box.pack_end(ebox, False, 0, 0)
         self.content.add(content_box)
+
+    def clear(self, widget):
+        self.labels['tb'].set_text("")
 
     def add_gcode(self, type, time, message):
         if type == "command":
@@ -94,10 +113,12 @@ class ConsolePanel(ScreenPanel):
             color = COLORS['error']
         elif message.startswith("//"):
             color = COLORS['warning']
+        elif self.hidetemps and re.match('^(?:ok\\s+)?(B|C|T\\d*):', message):
+            return
         else:
             color = COLORS['response']
 
-        message = '<span color="%s">%s</span>' % (color, message)
+        message = '<span color="%s"><b>%s</b></span>' % (color, message)
 
         message = message.replace('\n', '\n         ')
 
@@ -118,9 +139,11 @@ class ConsolePanel(ScreenPanel):
         if action == "notify_gcode_response":
             self.add_gcode("response", time.time(), data)
 
+    def hide_temps(self, *args):
+        self.hidetemps ^= True
+
     def set_autoscroll(self, *args):
         self.autoscroll ^= True
-        logging.debug(self.autoscroll)
 
     def _autoscroll(self, *args):
         if self.autoscroll:
